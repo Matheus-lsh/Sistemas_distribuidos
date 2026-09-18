@@ -53,26 +53,27 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as servidor:
     while True:
         cliente, endereco = servidor.accept()
         print(f"\nConexão de {endereco}")
-        
+
         with cliente:
             try:
-                # O cliente envia algo como: "0|nome_do_arq.txt|1024"
-                mensagem = ler_nome(cliente)
-                
-                if mensagem:
+                while True:                       # várias mensagens por conexão
+                    mensagem = ler_nome(cliente)
+                    if not mensagem:              # cliente fechou a conexão
+                        break
+
                     partes = mensagem.split("|")
-                    acao = partes[0]  # "0" ou "1"
-                    
+                    acao = partes[0]
+
                     if acao == "0" and len(partes) == 3:
                         _, nome_arq, tamanho = partes
                         tamanho = int(tamanho)
                         print(f"Recebendo: {nome_arq} ({tamanho} bytes)")
                         ler_arq(cliente, nome_arq, tamanho)
-                        
+
                     elif acao == "1" and len(partes) == 2:
                         _, nome_arq = partes
                         print(f"Removendo: {nome_arq}")
                         remover_arq(nome_arq)
-                        
+
             except Exception as e:
                 print(f"Erro ao processar cliente: {e}")

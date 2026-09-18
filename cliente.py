@@ -1,67 +1,66 @@
 import socket
 from pathlib import Path
 import time
+import hashlib
 
 NOME_PASTA = "compartilhada"
+SERVIDOR = ("10.3.1.35", 8080)
 
-def envia_arq(socket, caminho_arq):
+def hash_arquivo(caminho):
+    sha256 = hashlib.sha256()
+    with open(caminho, "rb") as arquivo:
+        while bloco := arquivo.read(1024 * 1024):
+            sha256.update(bloco)
+    return sha256.hexdigest()
+
+def envia_arq(sock, caminho_arq, tamanho):
+    enviado = 0
     with open(caminho_arq, "rb") as arq:
-        while True:
-            conteudo = arq.read(1024)
+        while enviado < tamanho:
+            conteudo = arq.read(min(1024, tamanho - enviado))
             if not conteudo:
                 break
-            socket.sendall(conteudo)
+            sock.sendall(conteudo)
+            enviado += len(conteudo)
 
-def ler_nome(socket):
-    conteudo_total = b""
-    while True:
-        conteudo = socket.recv(1)
-        if conteudo != b"\n":
-            conteudo_total += conteudo
-        else:
-            break
-    return conteudo_total
-
-def remover_arq_local(nome_arq):
-    # Função caso precise manipular algo localmente (opcional)
-    pass
-
-# Garante que a pasta existe localmente
 pasta = Path(NOME_PASTA)
 pasta.mkdir(exist_ok=True)
 
 print(f"Monitorando a pasta '{NOME_PASTA}'...")
 
+estado = {}  # nome -> hash do último conteúdo enviado ao servidor
+             # (vazio no início: arquivos já existentes serão enviados na 1ª volta)
+
 while True:
     try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as cliente:
-            cliente.connect(("10.3.1.35", 8080))
-            
-            # Pega o estado inicial dos arquivos
-            arquivos_conhecidos = set(pasta.iterdir())
-            time.sleep(2)
-            # Pega o estado após o intervalo
-            arquivos_novos = set(pasta.iterdir())
-            
-            novos = arquivos_novos - arquivos_conhecidos
-            removidos = arquivos_conhecidos - arquivos_novos 
-            
-            if novos:
-                for arquivo in novos:
-                    if arquivo.is_file():
-                        print(f"{arquivo.name} adicionado")
-                        tamanho = arquivo.stat().st_size
-                        # Envia o protocolo de adição: "0|nome|tamanho"
-                        cliente.sendall(f"0|{arquivo.name}|{tamanho}\n".encode())
-                        envia_arq(cliente, arquivo)
-                        print(f"{arquivo.name} enviado com sucesso.")
-                        
-            if removidos:
-                for arquivo in removidos:
-                    print(f"{arquivo.name} removido")
-                    # Envia o protocolo de remoção: "1|nome"
-                    cliente.sendall(f"1|{arquivo.name}\n".encode())
-                    
+        atuais = {a.name: a for a in pasta.iterdir() if a.is_file()}
+
+        para_enviar = []
+        for nome, caminho in atuais.items():
+            h = hash_arquivo(caminho)
+            if estado.get(nome) != h:      # novo OU alterado
+                para_enviar.append((nome, caminho, h))
+
+        removidos = [n for n in estado if n not in atuais]
+
+        if para_enviar or removidos:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as cliente:
+                cliente.connect(SERVIDOR)
+
+                for nome, caminho, h in para_enviar:
+                    tamanho = caminho.stat().st_size
+                    print(f"Enviando {nome} ({tamanho} bytes)")
+                    cliente.sendall(f"0|{nome}|{tamanho}\n".encode())
+                    envia_arq(cliente, caminho, tamanho)
+                    estado[nome] = h       # só atualiza após enviar
+
+                for nome in removidos:
+                    print(f"{nome} removido")
+                    cliente.sendall(f"1|{nome}\n".encode())
+                    del estado[nome]
+
+        time.sleep(2)
+
     except ConnectionRefusedError:
         print("Servidor offline. Tentando reconectar em 3 segundos...")
         time.sleep(3)
