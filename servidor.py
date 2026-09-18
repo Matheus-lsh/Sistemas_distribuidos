@@ -10,7 +10,7 @@ Path(NOME_PASTA).mkdir(exist_ok=True)
 def envia_arq(socket,caminho_arq):
     arq = open(caminho_arq,"rb")
     while True:
-        conteudo = arq.read(1024)
+        conteudo = arq.read(10024)
         if conteudo:
             socket.sendall(conteudo)
         else:
@@ -36,7 +36,7 @@ def ler_arq(sock, nome_arq, tamanho):
     recebido = 0
     with open(NOME_PASTA + "/" + nome_arq, "wb") as arq:
         while recebido < tamanho:
-            dados = sock.recv(min(1024, tamanho - recebido))
+            dados = sock.recv(min(10024, tamanho - recebido))
             if not dados:
                 raise ConnectionError("Conexão encerrada antes do fim do arquivo")
             arq.write(dados)

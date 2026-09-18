@@ -17,7 +17,7 @@ def envia_arq(sock, caminho_arq, tamanho):
     enviado = 0
     with open(caminho_arq, "rb") as arq:
         while enviado < tamanho:
-            conteudo = arq.read(min(1024, tamanho - enviado))
+            conteudo = arq.read(min(10024, tamanho - enviado))
             if not conteudo:
                 break
             sock.sendall(conteudo)
